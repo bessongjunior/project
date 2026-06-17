@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Data artifacts (large / regenerable — not for VCS)
+research_impl/dataset/csv/
+research_impl/dataset/parquets/
+research_impl/dataset/tmp/
+research_impl/dataset/**/*.npy
+research_impl/processed/
+*.pth
+
+# Evaluation outputs (regenerable)
+research_impl/evaluation/outputs/
+
+# Node / frontend
+node_modules/
+
+# OS
+.DS_Store
