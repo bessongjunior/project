@@ -13,8 +13,16 @@ research_impl/dataset/**/*.npy
 research_impl/processed/
 *.pth
 
-# Evaluation outputs (regenerable)
+# Evaluation outputs / result artifacts (regenerable — not source)
 research_impl/evaluation/outputs/
+research_impl/turning results output/
+research_impl/dataset/**/weights/
+*.cfg.json
+
+# drawio temp/backup files
+.$*
+*.bkp
+*.dtmp
 
 # Node / frontend
 node_modules/
