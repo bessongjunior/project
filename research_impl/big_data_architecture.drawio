@@ -1,0 +1,131 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.3.6 Chrome/140.0.7339.249 Electron/38.8.0 Safari/537.36" version="29.3.6">
+  <diagram id="smartpick-big-data-architecture" name="SmartPick Big Data Architecture">
+    <mxGraphModel dx="2360" dy="1611" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=24;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;" value="Delivery Optimization - AWS Big Data Architecture" vertex="1">
+          <mxGeometry height="40" width="1080" x="260" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="sources-container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacing=12;fontColor=#ffffff;" value="External and Raw Data Sources" vertex="1">
+          <mxGeometry height="260" width="300" x="40" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="lade" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#60a917;strokeColor=#2D7600;fontSize=12;fontColor=#ffffff;" value="LaDe-D Delivery Logs&#xa;delivery_cq/sh/hz/jl/yt&#xa;order, courier, lat/lng, timestamps" vertex="1">
+          <mxGeometry height="72" width="240" x="70" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="osm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#60a917;strokeColor=#2D7600;fontSize=12;fontColor=#ffffff;" value="OpenStreetMap / OSMnx&#xa;city road networks&#xa;nodes, edges, speed, travel time" vertex="1">
+          <mxGeometry height="72" width="240" x="70" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="s3-container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a0522d;strokeColor=#6D1F00;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacing=12;fontColor=#ffffff;" value="Amazon S3 Data Lake" vertex="1">
+          <mxGeometry height="300" width="350" x="400" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="s3-raw" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#a20025;strokeColor=#6F0000;fontSize=12;fontColor=#ffffff;" value="s3://bucket/lade-d/raw/&#xa;raw parquet / CSV city files" vertex="1">
+          <mxGeometry height="80" width="130" x="430" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="s3-processed" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#a20025;strokeColor=#6F0000;fontSize=12;fontColor=#ffffff;" value="s3://bucket/research_impl/processed/&#xa;OSM graph pkl + graph edge tensors" vertex="1">
+          <mxGeometry height="80" width="130" x="590" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="s3-dataset" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#a20025;strokeColor=#6F0000;fontSize=12;fontColor=#ffffff;" value="s3://bucket/research_impl/dataset/&#xa;package_feature, mapped tables, train/val/test tensors" vertex="1">
+          <mxGeometry height="90" width="160" x="500" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="emr-container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6d8764;strokeColor=#3A5431;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacing=12;fontColor=#ffffff;" value="Amazon EMR Hadoop / Spark Cluster" vertex="1">
+          <mxGeometry height="500" width="700" x="820" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="emr-master" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1ba1e2;strokeColor=#006EAF;fontSize=12;fontColor=#ffffff;" value="EMR Primary Node&#xa;YARN ResourceManager&#xa;Spark Driver" vertex="1">
+          <mxGeometry height="85" width="160" x="860" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="emr-core" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1ba1e2;strokeColor=#006EAF;fontSize=12;fontColor=#ffffff;" value="Core / Task Nodes&#xa;HDFS + YARN NodeManagers&#xa;Spark Executors" vertex="1">
+          <mxGeometry height="85" width="180" x="1060" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="spark-ingest" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#A50040;fontSize=12;fontColor=#ffffff;" value="Stage 1: Spark Ingestion&#xa;research_impl/dataset/data.py&#xa;dataset.py window functions&#xa;clean city tables + trajectory features" vertex="1">
+          <mxGeometry height="105" width="190" x="870" y="285" as="geometry" />
+        </mxCell>
+        <mxCell id="map-match" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#008a00;strokeColor=#005700;fontSize=12;fontColor=#ffffff;" value="Stage 2: Map Matching&#xa;research_impl/pre_processing/map_matcher.py&#xa;nearest OSM node + shortest-path road distance" vertex="1">
+          <mxGeometry height="105" width="190" x="1100" y="285" as="geometry" />
+        </mxCell>
+        <mxCell id="tensorize" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6a00ff;strokeColor=#3700CC;fontSize=12;fontColor=#ffffff;" value="Stage 3: Tensorization&#xa;research_impl/dataset/tensorize.py&#xa;V, A, L, labels, masks, ETA labels, rush flags" vertex="1">
+          <mxGeometry height="105" width="170" x="1320" y="285" as="geometry" />
+        </mxCell>
+        <mxCell id="osm-extract" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1ba1e2;strokeColor=#006EAF;fontSize=12;fontColor=#ffffff;" value="Road Graph Extraction&#xa;research_impl/extraction/map_data.py&#xa;OSMnx graph_from_place&#xa;edge speeds + travel times" vertex="1">
+          <mxGeometry height="105" width="190" x="870" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="orchestration" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0050ef;strokeColor=#001DBC;fontSize=12;fontColor=#ffffff;" value="Cluster Orchestration&#xa;spark-submit / EMR Steps&#xa;CloudWatch logs&#xa;IAM role access to S3" vertex="1">
+          <mxGeometry height="85" width="190" x="1290" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="ml-container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6d8764;strokeColor=#3A5431;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacing=12;fontColor=#ffffff;" value="Model Training and Evaluation Layer" vertex="1">
+          <mxGeometry height="260" width="760" x="400" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="models" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0050ef;strokeColor=#001DBC;fontSize=12;fontColor=#ffffff;" value="Map-Aware Models&#xa;ST-GCN / T-GCN&#xa;Graph2Route / FDNet&#xa;M2G4RTP / DRL4Route" vertex="1">
+          <mxGeometry height="105" width="180" x="440" y="715" as="geometry" />
+        </mxCell>
+        <mxCell id="train" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0050ef;strokeColor=#001DBC;fontSize=12;fontColor=#ffffff;" value="Training Harness&#xa;research_impl/train.py&#xa;loads train/val tensors&#xa;saves weights + cfg" vertex="1">
+          <mxGeometry height="105" width="180" x="660" y="715" as="geometry" />
+        </mxCell>
+        <mxCell id="eval" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0050ef;strokeColor=#001DBC;fontSize=12;fontColor=#ffffff;" value="Evaluation Runner&#xa;research_impl/evaluation/eval.py&#xa;HR@K, KRC, LSD, ED&#xa;MAE, RMSE, MAPE, ACC@T" vertex="1">
+          <mxGeometry height="105" width="220" x="880" y="715" as="geometry" />
+        </mxCell>
+        <mxCell id="baselines" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a20025;strokeColor=#6F0000;fontSize=12;fontColor=#ffffff;" value="Baselines&#xa;Distance-Greedy&#xa;Time-Greedy&#xa;OR-Tools&#xa;LightGBM" vertex="1">
+          <mxGeometry height="60" width="180" x="660" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="artifacts" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#1ba1e2;strokeColor=#006EAF;fontSize=12;fontColor=#ffffff;" value="Model and Report Artifacts&#xa;weights/*.pth&#xa;metrics.csv / grades.json / summary.txt" vertex="1">
+          <mxGeometry height="95" width="190" x="1210" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-lade-s3" edge="1" parent="1" source="lade" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#1D4ED8;fontSize=11;" target="s3-raw" value="download / stage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-osm-extract" edge="1" parent="1" source="osm" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#16A34A;fontSize=11;" target="osm-extract" value="OSM queries">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="190" y="500" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-raw-ingest" edge="1" parent="1" source="s3-raw" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#EA580C;fontSize=11;" target="spark-ingest" value="read parquet">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-ingest-dataset" edge="1" parent="1" source="spark-ingest" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#EA580C;fontSize=11;" target="s3-dataset" value="write package_feature">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-extract-processed" edge="1" parent="1" source="osm-extract" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#16A34A;fontSize=11;" target="s3-processed" value="graph.pkl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-processed-mapmatch" edge="1" parent="1" source="s3-processed" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#16A34A;fontSize=11;" target="map-match" value="load graph">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-dataset-mapmatch" edge="1" parent="1" source="s3-dataset" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#EA580C;fontSize=11;" target="map-match" value="package_feature">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-mapmatch-dataset" edge="1" parent="1" source="map-match" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#16A34A;fontSize=11;" target="s3-dataset" value="mapped table + graph.npy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-mapmatch-tensor" edge="1" parent="1" source="map-match" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#7C3AED;fontSize=11;" target="tensorize" value="mapped features">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-tensor-dataset" edge="1" parent="1" source="tensorize" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#7C3AED;fontSize=11;" target="s3-dataset" value="train / val / test .npy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-dataset-train" edge="1" parent="1" source="s3-dataset" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#0F766E;fontSize=11;" target="train" value="load tensors">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-model-train" edge="1" parent="1" source="models" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#0F766E;fontSize=11;" target="train" value="model family">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-train-eval" edge="1" parent="1" source="train" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#0F766E;fontSize=11;" target="eval" value="weights + predictions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-baselines-eval" edge="1" parent="1" source="baselines" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#D97706;fontSize=11;" target="eval" value="comparison">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-eval-artifacts" edge="1" parent="1" source="eval" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#059669;fontSize=11;" target="artifacts" value="metrics + grades">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-artifacts-s3" edge="1" parent="1" source="artifacts" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#059669;fontSize=11;" target="s3-dataset" value="persist outputs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6a00ff;strokeColor=#3700CC;fontSize=13;fontStyle=1;align=center;fontColor=#ffffff;" value="Research contribution: scalable multi-city LaDe-D ingestion + OSM road-network enrichment + map-aware route/ETA tensors + unified model/baseline evaluation." vertex="1">
+          <mxGeometry height="45" width="1440" x="80" y="925" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

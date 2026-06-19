@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .pointer import PointerDecoder
+
 
 class GCN(nn.Module):
     """
@@ -24,38 +26,22 @@ class GCN(nn.Module):
 
 
 class TGCN(nn.Module):
-    """
-    Temporal Graph Convolutional Network (GCN + GRU).
+    """GCN + GRU spatial-temporal encoder + autoregressive pointer decoder."""
 
-    Consumes a sequence of road-network snapshots and predicts a per-node
-    output (e.g. ETA / travel time) at the final step.
-    """
-
-    def __init__(self, n_nodes, n_features, n_hidden, n_output):
+    def __init__(self, n_nodes, n_features, n_hidden, n_output=1):
         super(TGCN, self).__init__()
-        self.n_hidden = n_hidden
         self.gcn = GCN(n_features, n_hidden)
         self.gru = nn.GRU(n_hidden, n_hidden, batch_first=True)
-        self.fc = nn.Linear(n_hidden, n_output)
+        self.dec = PointerDecoder(n_hidden, n_hidden, predict_eta=True)  # T-GCN: route + ETA
 
-    def forward(self, x, A):
-        """
-        x: (B, T, N, F) sequence of snapshots, or (B, N, F) for a single step.
-        A: Adjacency matrix (N, N) or (B, N, N)
-        Returns: (B, N, n_output)
-        """
-        if x.dim() == 3:
-            x = x.unsqueeze(1)  # (B, 1, N, F)
-        B, T, N, _ = x.shape
+    def encode(self, x, A):
+        h = self.gcn(x, A)          # (B, N, H)
+        out, _ = self.gru(h)        # (B, N, H) — recurrent memory over nodes
+        return out
 
-        # Spatial convolution at every timestep.
-        spatial = []
-        for t in range(T):
-            spatial.append(self.gcn(x[:, t], A))  # (B, N, H)
-        h = torch.stack(spatial, dim=1)           # (B, T, N, H)
+    def forward(self, x, A, mask=None, target=None):
+        return self.dec(self.encode(x, A), mask, target)
 
-        # Temporal modelling per node: GRU over the T axis.
-        h = h.permute(0, 2, 1, 3).reshape(B * N, T, self.n_hidden)  # (B*N, T, H)
-        out, _ = self.gru(h)
-        last = out[:, -1, :].reshape(B, N, self.n_hidden)           # (B, N, H)
-        return self.fc(last)
+    @torch.no_grad()
+    def beam_decode(self, x, A, mask=None, beam=5):
+        return self.dec.beam_decode(self.encode(x, A), mask, beam)

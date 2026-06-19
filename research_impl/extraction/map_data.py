@@ -21,7 +21,7 @@ ox.settings.log_console = False
 class CityMapExtractor:
     def __init__(self, output_dir=os.path.join(ws, 'research_impl/processed')):
         self.output_dir = output_dir
-        dir_check(self.output_dir)
+        os.makedirs(self.output_dir, exist_ok=True)
 
     def get_road_network(self, city_name, network_type='drive'):
         """

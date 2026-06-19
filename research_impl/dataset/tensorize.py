@@ -72,41 +72,52 @@ class DeliveryDataset:
     def __init__(self, params):
         self.p = params
         self.N_min, self.N_max = params['len_range']
-        self.F = len(FEATURE_COLS)
+        self.F = 10  # engineered features (see _features): cyclical time encoding
 
     # -- per-trajectory feature construction ------------------------------
     def _features(self, traj):
-        """traj: DataFrame of one courier-day, sorted by finish_time_minute."""
+        """traj: DataFrame of one courier-day, sorted by finish_time_minute.
+        Builds 10 engineered features (cyclical time encoding) per stop."""
         N = len(traj)
         for c in FEATURE_COLS:
             if c not in traj.columns:
                 traj[c] = 0.0
         traj = traj.copy()
-        traj['aoi_type'] = pd.factorize(traj['aoi_type'])[0]
-
-        feats = traj[FEATURE_COLS].to_numpy(dtype=np.float64)
-        # light normalization: centre coords, scale times / distances
-        feats[:, 0] -= feats[:, 0].mean()            # lat
-        feats[:, 1] -= feats[:, 1].mean()            # lng
-        feats[:, 2:4] /= 1440.0                       # times -> days
-        feats[:, 4] /= 60.0                           # time_to_last -> hours
-        feats[:, 5:7] /= 1000.0                        # distances -> km
 
         lat = traj['lat'].to_numpy(dtype=np.float64)
         lng = traj['lng'].to_numpy(dtype=np.float64)
+        acc = traj['accept_time_minute'].to_numpy(dtype=np.float64)
+        exp = traj['expect_finish_time_minute'].to_numpy(dtype=np.float64)
+        ttl = traj['time_to_last_package'].to_numpy(dtype=np.float64)
+        dis = traj['dis_to_last_package'].to_numpy(dtype=np.float64)
+        road = traj['true_road_distance'].to_numpy(dtype=np.float64)
+        aoi = pd.factorize(traj['aoi_type'])[0].astype(np.float64)
+
+        tp = 2.0 * np.pi
+        feats = np.stack([
+            lat - lat.mean(),                       # centred latitude
+            lng - lng.mean(),                       # centred longitude
+            np.sin(tp * acc / 1440.0),              # accept time (cyclical)
+            np.cos(tp * acc / 1440.0),
+            np.sin(tp * exp / 1440.0),              # expected finish (cyclical)
+            np.cos(tp * exp / 1440.0),
+            ttl / 60.0,                             # time-to-last (hours)
+            dis / 1000.0,                           # geodesic dist-to-last (km)
+            road / 1000.0,                          # road dist-to-last (km)
+            aoi,                                    # AOI category code
+        ], axis=1)                                  # (N, 10)
+
         dist = _haversine_matrix(lat, lng)
         A = _adjacency(dist, k=self.p.get('knn', 8))
 
-        # The trajectory is already sorted by completion time, so the true visit
-        # order over the *input* node indices is simply 0..N-1. We shuffle the
-        # input order so the model must recover the sequence (no leakage).
+        # Trajectory is sorted by completion time; shuffle input order so the
+        # model must recover the sequence (no leakage).
         perm = np.random.permutation(N)
         V = feats[perm]
         A = A[np.ix_(perm, perm)]
-        # visit_seq[t] = input-node position of the t-th visited stop
-        visit_seq = np.argsort(perm)
-        eta = traj['time_to_last_package'].to_numpy(dtype=np.float64)  # per-leg travel time (min), visit order
-        coords = np.stack([lat, lng], axis=1)[perm]   # raw lat/lng in input order (for LSD in metres)
+        visit_seq = np.argsort(perm)                # input-node pos of t-th visited stop
+        eta = np.cumsum(ttl)                        # cumulative trip time (min), visit order
+        coords = np.stack([lat, lng], axis=1)[perm]  # raw lat/lng in input order (LSD)
         return V, A, visit_seq, eta, coords
 
     # -- pad + stack ------------------------------------------------------

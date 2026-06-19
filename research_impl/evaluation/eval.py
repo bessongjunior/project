@@ -42,7 +42,9 @@ from research_impl.algorithms.baseline import (
 
 ALL_MODELS = ['stgcn', 'tgcn', 'graph2route', 'm2g4rtp', 'drl4route', 'fdnet']
 HEURISTIC_BASELINES = ['distance_greedy', 'time_greedy', 'ortools']
-ACCEPT_TIME_COL = 2  # index of accept_time_minute in the V feature vector
+# accept-time is cyclically encoded at V columns 2 (sin) and 3 (cos);
+# recover a monotonic time-of-day signal for the time-greedy baseline via atan2.
+ACCEPT_SIN_COL, ACCEPT_COS_COL = 2, 3
 
 # evaluation.md absolute thresholds (baseline-free gates): (metric, thr, higher_is_better)
 GATES = [('hr@3', 0.70, True), ('krc', 0.60, True), ('ed', 2.0, False), ('mape', 15.0, False)]
@@ -57,7 +59,7 @@ def _data_dir(city):
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def evaluate_model(name, city, device, batch=64, rush=False):
+def evaluate_model(name, city, device, batch=64, rush=False, beam=1):
     d = _data_dir(city)
     test_path, wpath = os.path.join(d, 'test.npy'), os.path.join(d, 'weights', f'{name}.pth')
     if not os.path.exists(test_path):
@@ -85,6 +87,16 @@ def evaluate_model(name, city, device, batch=64, rush=False):
     for b in dl:
         b = to_device(b, device)
         _, pred_seq, eta_pred, step_scores = forward_step(name, model, b)
+        if beam > 1:                                # beam search for all pointer models
+            if name == 'graph2route':
+                pred_seq = model.beam_decode(b['V'], b['L'], b['courier_id'], b['mask'], beam=beam)
+            elif name == 'fdnet':
+                pred_seq = model.beam_decode(b['V'], b['mask'], beam=beam)
+            elif name == 'stgcn':
+                pred_seq = model.beam_decode(b['V'], b['L'], b['mask'], beam=beam)
+            else:                                   # tgcn, m2g4rtp, drl4route (GCN over A)
+                pred_seq = model.beam_decode(b['V'], b['A'], b['mask'], beam=beam)
+            step_scores = None                      # sequence output -> positional HR@K
         coords, is_rush = b.get('coords'), b.get('is_rush')
         for i in range(len(b['length'])):
             Ln = int(b['length'][i])
@@ -132,7 +144,10 @@ def evaluate_baseline(name, city):
         if name == 'lightgbm':
             pred = lgbm.predict_seq(V[i], Ln)
         elif name == 'time_greedy':
-            pred = run_baseline('time_greedy', c, times=V[i, :Ln, ACCEPT_TIME_COL], start=start)
+            # mod 2*pi so afternoon angles don't wrap negative (preserves time order)
+            t_sig = np.mod(np.arctan2(V[i, :Ln, ACCEPT_SIN_COL], V[i, :Ln, ACCEPT_COS_COL]),
+                           2 * np.pi)
+            pred = run_baseline('time_greedy', c, times=t_sig, start=start)
         else:
             pred = run_baseline(name, c, start=start)
         metric.update_route(pred, label[i, :Ln], coords=c)
@@ -269,6 +284,8 @@ def main():
     p.add_argument('--no-baselines', action='store_true')
     p.add_argument('--rush-hour', dest='rush_hour', action='store_true',
                    help="also report peak-hour MAPE (Integration.md Temporal gate)")
+    p.add_argument('--beam', type=int, default=1,
+                   help="beam width for pointer models (graph2route, fdnet); 1 = greedy")
     args = p.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -276,7 +293,7 @@ def main():
     models = {}
     for m in args.models:
         try:
-            r = evaluate_model(m, args.city, device, args.batch, rush=args.rush_hour)
+            r = evaluate_model(m, args.city, device, args.batch, rush=args.rush_hour, beam=args.beam)
         except FileNotFoundError as e:
             print(f"[!] {m}: {e}"); continue
         if r is None:

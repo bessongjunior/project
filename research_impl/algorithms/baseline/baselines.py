@@ -51,7 +51,7 @@ def time_greedy(coords, times, start=0, **_):
     return np.array([start] + rest, dtype=np.int64)
 
 
-def ortools_tsp(coords, start=0, time_limit=2, **_):
+def ortools_tsp(coords, start=0, time_limit=0.1, **_):
     """Exact-ish single-vehicle TSP via OR-Tools; falls back to distance_greedy."""
     try:
         from ortools.constraint_solver import pywrapcp, routing_enums_pb2
@@ -77,7 +77,9 @@ def ortools_tsp(coords, start=0, time_limit=2, **_):
         routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
     params.local_search_metaheuristic = (
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
-    params.time_limit.FromSeconds(time_limit)
+    # tiny instances (N<=25) reach the optimum in ms; cap GLS so it does not
+    # spend its full budget per trajectory (keeps it scalable to many trajectories)
+    params.time_limit.FromMilliseconds(max(1, int(time_limit * 1000)))
 
     sol = routing.SolveWithParameters(params)
     if sol is None:

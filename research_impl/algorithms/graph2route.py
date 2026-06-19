@@ -33,12 +33,14 @@ class MapAwareGraph2Route(nn.Module):
         self.pointer_ref = nn.Linear(n_hidden, n_hidden)
         self.pointer_v = nn.Linear(n_hidden, 1, bias=False)
 
-    def forward(self, x, L, courier_id, V_reach_mask=None):
+    def forward(self, x, L, courier_id, V_reach_mask=None, target=None):
         """
         x: (B, N, F) features mapped to OSM nodes
         L: Laplacian from the OSM graph (N, N) or (B, N, N)
         courier_id: (B,)
         V_reach_mask: (B, N) bool, True = stop unavailable (visited/unreachable)
+        target: (B, N) ground-truth visit order; if given, decode with teacher
+                forcing (training). If None, decode greedily (inference).
         Returns: (B, N, N) pointer logits (decode step x candidate node)
         """
         B, N, _ = x.shape
@@ -60,21 +62,80 @@ class MapAwareGraph2Route(nn.Module):
         else:
             mask = V_reach_mask.clone().bool()
 
-        # 4. Greedy pointer decoding
+        # 4. Pointer decoding (teacher-forced when target is given)
         dec_h = enc.mean(dim=1)                              # (B, H+d_w)
         dec_c = torch.zeros_like(dec_h)
         dec_input = enc.mean(dim=1)
+        idx = torch.arange(B, device=device)
 
         logits = []
-        for _ in range(N):
+        for t in range(N):
             dec_h, dec_c = self.decoder_rnn(dec_input, (dec_h, dec_c))
             q = self.pointer_query(dec_h).unsqueeze(1)       # (B, 1, H)
             scores = self.pointer_v(torch.tanh(q + ref)).squeeze(-1)  # (B, N)
             scores = scores.masked_fill(mask, float('-inf'))
             logits.append(scores)
 
-            choice = scores.argmax(dim=-1)                   # (B,)
-            mask = mask.scatter(1, choice.unsqueeze(1), True)
-            dec_input = enc[torch.arange(B, device=device), choice]  # (B, H+d_w)
+            if target is not None:                           # teacher forcing
+                gt = target[:, t]
+                valid = gt >= 0                              # ignore padded steps
+                gtc = gt.clamp(min=0)
+                upd = torch.zeros_like(mask)
+                upd[idx, gtc] = valid
+                mask = mask | upd                            # mark GT stop visited
+                dec_input = enc[idx, gtc]
+            else:                                            # greedy decoding
+                choice = scores.argmax(dim=-1)
+                mask = mask.scatter(1, choice.unsqueeze(1), True)
+                dec_input = enc[idx, choice]
 
         return torch.stack(logits, dim=1)                    # (B, N, N)
+
+    @torch.no_grad()
+    def beam_decode(self, x, L, courier_id, V_reach_mask=None, beam=5):
+        """Batched beam search over the pointer decoder. Returns the best
+        predicted visit order per sample, shape (B, N) of input-node indices."""
+        B, N, _ = x.shape
+        device = x.device
+        h_spatial = self.spatial_encoder(x, L)
+        h_temporal, _ = self.temporal_gru(h_spatial)
+        w_emb = self.worker_emb(courier_id).unsqueeze(1).expand(-1, N, -1)
+        enc = torch.cat([h_temporal, w_emb], dim=-1)         # (B, N, E)
+        ref = self.pointer_ref(h_temporal)                   # (B, N, H)
+        base_mask = (torch.zeros(B, N, dtype=torch.bool, device=device)
+                     if V_reach_mask is None else V_reach_mask.clone().bool())
+
+        # expand each sample into `beam` hypotheses
+        enc_b = enc.repeat_interleave(beam, dim=0)           # (Bb, N, E)
+        ref_b = ref.repeat_interleave(beam, dim=0)           # (Bb, N, H)
+        mask = base_mask.repeat_interleave(beam, dim=0)      # (Bb, N)
+        Bb = B * beam
+        dec_h = enc_b.mean(1)
+        dec_c = torch.zeros_like(dec_h)
+        dec_input = enc_b.mean(1)
+        seqs = torch.zeros(Bb, N, dtype=torch.long, device=device)
+        score = torch.full((B, beam), float('-inf'), device=device)
+        score[:, 0] = 0.0
+        score = score.view(Bb)
+        rows = torch.arange(Bb, device=device)
+
+        for t in range(N):
+            dec_h, dec_c = self.decoder_rnn(dec_input, (dec_h, dec_c))
+            q = self.pointer_query(dec_h).unsqueeze(1)
+            sc = self.pointer_v(torch.tanh(q + ref_b)).squeeze(-1)        # (Bb, N)
+            sc = sc.masked_fill(mask, float('-inf'))
+            logp = torch.log_softmax(torch.nan_to_num(sc, neginf=-1e9), dim=-1)
+            cand = (score.unsqueeze(1) + logp).view(B, beam * N)          # (B, beam*N)
+            topv, topi = cand.topk(beam, dim=-1)                          # (B, beam)
+            beam_id = topi // N
+            node = (topi % N).reshape(Bb)
+            parent = (torch.arange(B, device=device).unsqueeze(1) * beam + beam_id).reshape(Bb)
+            dec_h, dec_c = dec_h[parent], dec_c[parent]
+            mask = mask[parent].clone()
+            seqs = seqs[parent].clone()
+            score = topv.reshape(Bb)
+            seqs[rows, t] = node
+            mask[rows, node] = True
+            dec_input = enc_b[rows, node]
+
+        return seqs.view(B, beam, N)[:, 0, :]                # best beam per sample

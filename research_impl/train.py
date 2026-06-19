@@ -13,6 +13,7 @@ Usage:
     python -m research_impl.train --model graph2route --city chongqing --epochs 20
 """
 import os
+import copy
 import json
 import argparse
 
@@ -113,39 +114,35 @@ def _masked_argsort(scores, valid):
 # Forward + loss + predicted sequence (per model family)
 # ---------------------------------------------------------------------------
 
-def forward_step(name, model, batch):
+def forward_step(name, model, batch, teacher_forcing=False):
+    """All models are now encoder + pointer decoder. graph2route also takes a
+    courier id; fdnet additionally predicts ETA. The graph operator is the scaled
+    Laplacian L for the ChebNet encoder (stgcn, graph2route) and the adjacency A
+    for the GCN encoders (tgcn, m2g4rtp, drl4route)."""
     V, A, L, mask = batch['V'], batch['A'], batch['L'], batch['mask']
     label, eta_label, cid = batch['label'], batch['eta_label'], batch['courier_id']
-    length, valid = batch['length'], (~mask).float()
+    valid = (~mask).float()
     eta_pred = None
-    step_scores = None  # per-step candidate logits (pointer models) for scores-based HR@K
+    tgt = label if teacher_forcing else None  # teacher forcing only during training
 
     if name == 'graph2route':
-        logits = model(V, L, cid, mask)
+        logits = model(V, L, cid, mask, target=tgt)
         loss = _seq_ce(logits, label)
-        pred_seq = logits.argmax(-1)
-        step_scores = logits
     elif name == 'fdnet':
-        logits, eta_pred = model(V, mask)
+        logits, eta_pred = model(V, mask, target=tgt)
         loss = _seq_ce(logits, label) + _eta_mse(eta_pred, eta_label, valid)
-        pred_seq = logits.argmax(-1)
-        step_scores = logits
-    elif name in SCORE_MODELS:
-        scores = model(V, A)
-        loss = _score_rank_loss(scores, label, length, valid)
-        pred_seq = _masked_argsort(scores, mask == 0)
-    elif name in POLICY_MODELS:
-        probs, _ = model(V, A, mask)
-        first = label[:, :1].clamp(min=0)
-        loss = -torch.log(probs.gather(1, first) + 1e-9).mean()   # imitation of first move
-        pred_seq = _masked_argsort(probs, mask == 0)
-    else:  # ETA regressors -> route by predicted finish time
-        out = model(V, L if name == 'stgcn' else A).squeeze(-1)
-        eta_pred = out
-        loss = _eta_mse(out, eta_label, valid)
-        pred_seq = _masked_argsort(-out, mask == 0)
+    elif name == 'stgcn':                          # ST-GCN encoder: route + ETA
+        logits, eta_pred = model(V, L, mask, target=tgt)
+        loss = _seq_ce(logits, label) + _eta_mse(eta_pred, eta_label, valid)
+    elif name == 'tgcn':                           # T-GCN encoder: route + ETA
+        logits, eta_pred = model(V, A, mask, target=tgt)
+        loss = _seq_ce(logits, label) + _eta_mse(eta_pred, eta_label, valid)
+    else:  # m2g4rtp, drl4route  (GCN encoders over A, route only)
+        logits = model(V, A, mask, target=tgt)
+        loss = _seq_ce(logits, label)
 
-    return loss, pred_seq, eta_pred, step_scores
+    pred_seq = logits.argmax(-1)
+    return loss, pred_seq, eta_pred, logits
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +178,7 @@ def main():
     parser.add_argument('--batch', type=int, default=32)
     parser.add_argument('--hidden', type=int, default=64)
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--patience', type=int, default=8, help="early-stop patience (epochs)")
     parser.add_argument('--seed', type=int, default=2024)
     args = parser.parse_args()
 
@@ -201,26 +199,42 @@ def main():
     }
     model = build_model(args.model, cfg).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
 
+    best_score, best_state, bad = float('-inf'), None, 0
     for epoch in range(1, args.epochs + 1):
         model.train()
         total = 0.0
         for batch in train_dl:
             batch = to_device(batch, device)
-            loss, _, _, _ = forward_step(args.model, model, batch)
+            loss, _, _, _ = forward_step(args.model, model, batch, teacher_forcing=True)
             opt.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)   # gradient clipping
             opt.step()
             total += loss.item()
+        sched.step()
         val = evaluate(args.model, model, val_dl, device)
-        print(f"[epoch {epoch:02d}] loss={total / max(len(train_dl),1):.4f}  val={val}")
+        score = val.get('krc', float('-inf'))          # select best on val KRC
+        improved = score > best_score
+        if improved:
+            best_score, best_state, bad = score, copy.deepcopy(model.state_dict()), 0
+        else:
+            bad += 1
+        print(f"[epoch {epoch:02d}] loss={total / max(len(train_dl),1):.4f} "
+              f"val_krc={score:.4f}{' *' if improved else ''}  val={val}")
+        if bad >= args.patience:
+            print(f"[early stop] no val_krc gain for {args.patience} epochs (best={best_score:.4f})")
+            break
 
+    if best_state is not None:                          # restore best epoch
+        model.load_state_dict(best_state)
     out = os.path.join(data_dir, 'weights', f'{args.model}.pth')
     dir_check(out)
     torch.save(model.state_dict(), out)
     with open(os.path.join(data_dir, 'weights', f'{args.model}.cfg.json'), 'w') as f:
         json.dump(cfg, f)
-    print(f"[+] saved weights -> {out}")
+    print(f"[+] saved BEST weights (val_krc={best_score:.4f}) -> {out}")
 
 
 if __name__ == "__main__":

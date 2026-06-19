@@ -158,7 +158,7 @@ def pre_process_delivery(fin, fout, is_test=False, thread_num=20):
     df.insert(0, 'index', range(1, df.shape[0] + 1))
     
     if fout:
-        dir_check(fout)
+        os.makedirs(fout, exist_ok=True)
         df.to_csv(os.path.join(fout, 'package_feature.csv'), index=False)
         pd.DataFrame(couriers_feature).to_csv(os.path.join(fout, 'courier_feature.csv'), index=False)
     
